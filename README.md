@@ -1,2 +1,14 @@
 # zalo-kit
-Shared Go toolkit for Zalo personal-account runtime, QR login, socket pool, inbound parsing and send safety.
+
+Private Go toolkit dùng chung cho ZChốt:
+
+- Zalo client wrapper và mutex safety.
+- QR login server-side.
+- Socket lifecycle, reconnect và backoff.
+- Auth/network/proxy health classification.
+- Inbound event normalization.
+- Send policy và account safety primitives.
+
+Module dự kiến: `github.com/zchot-platform/zalo-kit`.
+
+Thư viện này không chứa bot workflow, tenant data, prompt, memory hoặc nghiệp vụ bán hàng.
