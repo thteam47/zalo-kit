@@ -24,14 +24,14 @@ type Options struct {
 }
 
 type QRChallenge struct {
-	ImageDataURL string
-	IssuedAt     time.Time
+	ImageDataURL string    `json:"imageDataUrl"`
+	IssuedAt     time.Time `json:"issuedAt"`
 	raw          *zago.QRAuthResult
 }
 
 type QRScan struct {
-	Scanned bool
-	Profile map[string]any
+	Scanned bool           `json:"scanned"`
+	Profile map[string]any `json:"profile,omitempty"`
 }
 
 type SendResult struct {
