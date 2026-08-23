@@ -9,6 +9,6 @@ Private Go toolkit dùng chung cho ZChốt:
 - Inbound event normalization.
 - Send policy và account safety primitives.
 
-Module dự kiến: `github.com/zchot-platform/zalo-kit`.
+Module: `github.com/thteam47/zalo-kit`.
 
 Thư viện này không chứa bot workflow, tenant data, prompt, memory hoặc nghiệp vụ bán hàng.
