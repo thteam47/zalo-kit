@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	ErrNoQRChallenge = errors.New("zalo-kit: no active QR challenge")
+	ErrNoQRChallenge  = errors.New("zalo-kit: no active QR challenge")
 	ErrSessionInvalid = errors.New("zalo-kit: Zalo session is invalid or expired")
 )
 
@@ -188,16 +188,34 @@ func (c *Client) Listen(ctx context.Context, onMessage func(inbound.Message), on
 	}
 }
 
+// SetTyping bật chỉ báo "đang soạn tin" của Zalo. Trả lời tức thì là dấu hiệu
+// máy rõ nhất, nên sản phẩm dùng chỉ báo này cùng với độ trễ theo độ dài tin.
+func (c *Client) SetTyping(_ context.Context, threadID string, threadType inbound.ThreadType) error {
+	if strings.TrimSpace(threadID) == "" {
+		return errors.New("zalo-kit: thread ID is required")
+	}
+	c.mu.Lock()
+	_, err := c.api.SetTyping(threadID, zaloThreadType(threadType))
+	c.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("set Zalo typing: %w", err)
+	}
+	return nil
+}
+
+func zaloThreadType(threadType inbound.ThreadType) zago.ThreadType {
+	if threadType == inbound.ThreadGroup {
+		return zago.ThreadTypeGROUP
+	}
+	return zago.ThreadTypeUSER
+}
+
 func (c *Client) SendText(_ context.Context, threadID string, threadType inbound.ThreadType, text string) (SendResult, error) {
 	if strings.TrimSpace(threadID) == "" || strings.TrimSpace(text) == "" {
 		return SendResult{}, errors.New("zalo-kit: thread ID and text are required")
 	}
-	tt := zago.ThreadTypeUSER
-	if threadType == inbound.ThreadGroup {
-		tt = zago.ThreadTypeGROUP
-	}
 	c.mu.Lock()
-	raw, err := c.api.SendMessage(zago.Message{Text: text}, threadID, tt)
+	raw, err := c.api.SendMessage(zago.Message{Text: text}, threadID, zaloThreadType(threadType))
 	c.mu.Unlock()
 	if err != nil {
 		return SendResult{}, fmt.Errorf("send Zalo message: %w", err)
