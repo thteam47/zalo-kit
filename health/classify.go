@@ -25,7 +25,7 @@ func Classify(err error) FailureKind {
 		return FailureNetwork
 	}
 	message := strings.ToLower(err.Error())
-	for _, marker := range []string{"invalid cookie", "session expired", "unauthorized", "login required"} {
+	for _, marker := range []string{"invalid cookie", "session expired", "session key was improperly submitted", "has reached its timeout", "error #102", "unauthorized", "login required"} {
 		if strings.Contains(message, marker) {
 			return FailureAuth
 		}

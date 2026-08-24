@@ -10,10 +10,14 @@ import (
 	"time"
 
 	"github.com/thteam47/zago"
+	"github.com/thteam47/zalo-kit/health"
 	"github.com/thteam47/zalo-kit/inbound"
 )
 
-var ErrNoQRChallenge = errors.New("zalo-kit: no active QR challenge")
+var (
+	ErrNoQRChallenge = errors.New("zalo-kit: no active QR challenge")
+	ErrSessionInvalid = errors.New("zalo-kit: Zalo session is invalid or expired")
+)
 
 type Options struct {
 	AccountID string
@@ -87,6 +91,9 @@ func (c *Client) SetSession(cookies map[string]string) bool {
 
 func (c *Client) hydrateSession() error {
 	if err := c.api.Login("", "", c.imei, c.userAgent); err != nil {
+		if health.Classify(err) == health.FailureAuth {
+			return fmt.Errorf("%w: %v", ErrSessionInvalid, err)
+		}
 		return fmt.Errorf("hydrate Zalo session: %w", err)
 	}
 	return nil
