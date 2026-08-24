@@ -43,6 +43,8 @@ type SendResult struct {
 type Client struct {
 	api       *zago.ZaloAPI
 	accountID string
+	imei      string
+	userAgent string
 	mu        sync.Mutex
 	qr        *QRChallenge
 }
@@ -63,7 +65,13 @@ func New(opts Options) (*Client, error) {
 			return nil, fmt.Errorf("set Zalo proxy: %w", err)
 		}
 	}
-	return &Client{api: api, accountID: opts.AccountID}, nil
+	client := &Client{api: api, accountID: opts.AccountID, imei: opts.IMEI, userAgent: opts.UserAgent}
+	if len(opts.Cookies) > 0 {
+		if err := client.hydrateSession(); err != nil {
+			return nil, err
+		}
+	}
+	return client, nil
 }
 
 func (c *Client) IsLoggedIn() bool { return c != nil && c.api != nil && c.api.IsLoggedIn() }
@@ -71,7 +79,17 @@ func (c *Client) IsLoggedIn() bool { return c != nil && c.api != nil && c.api.Is
 func (c *Client) SetSession(cookies map[string]string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.api.SetSession(cookies)
+	if !c.api.SetSession(cookies) {
+		return false
+	}
+	return c.hydrateSession() == nil
+}
+
+func (c *Client) hydrateSession() error {
+	if err := c.api.Login("", "", c.imei, c.userAgent); err != nil {
+		return fmt.Errorf("hydrate Zalo session: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) GenerateQR() (QRChallenge, error) {
