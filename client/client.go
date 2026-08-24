@@ -38,6 +38,13 @@ type QRScan struct {
 	Profile map[string]any `json:"profile,omitempty"`
 }
 
+// QRSession là phiên thu được sau khi người dùng bấm xác nhận trên điện thoại.
+type QRSession struct {
+	Cookies     map[string]string
+	UserID      string
+	DisplayName string
+}
+
 type SendResult struct {
 	MessageID       string
 	ClientMessageID string
@@ -71,8 +78,13 @@ func New(opts Options) (*Client, error) {
 	}
 	client := &Client{api: api, accountID: opts.AccountID, imei: opts.IMEI, userAgent: opts.UserAgent}
 	if len(opts.Cookies) > 0 {
-		if err := client.hydrateSession(); err != nil {
-			return nil, err
+		api.SetSession(opts.Cookies)
+		// Cookie còn sống thì dùng luôn. Gọi Login khi không cần chỉ tổ làm
+		// Zalo cấp lại khoá phiên và vứt cái đang dùng được.
+		if !api.IsLoggedIn() {
+			if err := client.hydrateSession(); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return client, nil
@@ -128,42 +140,65 @@ func (c *Client) CheckQRScan() (QRScan, error) {
 	return QRScan{Scanned: responseCode(profile) == 0, Profile: profile}, nil
 }
 
-func (c *Client) WaitQRConfirm(ctx context.Context, interval time.Duration) (map[string]string, error) {
+func (c *Client) WaitQRConfirm(ctx context.Context, interval time.Duration) (QRSession, error) {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return QRSession{}, ctx.Err()
 		default:
 		}
 		c.mu.Lock()
 		if c.qr == nil || c.qr.raw == nil {
 			c.mu.Unlock()
-			return nil, ErrNoQRChallenge
+			return QRSession{}, ErrNoQRChallenge
 		}
 		result, err := c.api.CheckQRCodeConfirm(c.qr.raw)
 		if err == nil && responseCode(result) == 0 {
-			cookies, cookieErr := c.api.QRCookies(c.qr.raw)
+			session, sessionErr := c.finishQR()
 			c.mu.Unlock()
-			if cookieErr != nil {
-				return nil, fmt.Errorf("read Zalo QR session: %w", cookieErr)
-			}
-			return cookies, nil
+			return session, sessionErr
 		}
 		c.mu.Unlock()
 		if err != nil {
-			return nil, fmt.Errorf("confirm Zalo QR: %w", err)
+			return QRSession{}, fmt.Errorf("confirm Zalo QR: %w", err)
 		}
 		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, ctx.Err()
+			return QRSession{}, ctx.Err()
 		case <-timer.C:
 		}
 	}
+}
+
+// finishQR chốt phiên sau khi người dùng đã xác nhận. Hai lời gọi CheckQRSession
+// và FetchQRUserInfo là bắt buộc: bỏ qua chúng thì cookie đọc được vẫn có nhưng
+// chưa thành phiên thật, và lần đăng nhập sau sẽ trả lỗi #102 "session key was
+// improperly submitted" — trông hệt như hết phiên, rất dễ chẩn đoán nhầm.
+// Người gọi đang giữ khoá.
+func (c *Client) finishQR() (QRSession, error) {
+	if _, err := c.api.CheckQRSession(c.qr.raw); err != nil {
+		return QRSession{}, fmt.Errorf("finalize Zalo QR session: %w", err)
+	}
+	if _, err := c.api.FetchQRUserInfo(c.qr.raw); err != nil {
+		return QRSession{}, fmt.Errorf("read Zalo account info: %w", err)
+	}
+	cookies, err := c.api.QRCookies(c.qr.raw)
+	if err != nil {
+		return QRSession{}, fmt.Errorf("read Zalo QR session: %w", err)
+	}
+	if len(cookies) == 0 {
+		return QRSession{}, errors.New("zalo-kit: Zalo returned no session cookies after confirmation")
+	}
+	return QRSession{
+		Cookies:     cookies,
+		UserID:      c.api.UID(),
+		DisplayName: strings.TrimSpace(c.api.AccountName()),
+	}, nil
 }
 
 func (c *Client) Listen(ctx context.Context, onMessage func(inbound.Message), onError func(error)) error {
