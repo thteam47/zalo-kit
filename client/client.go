@@ -34,7 +34,12 @@ type QRChallenge struct {
 }
 
 type QRScan struct {
-	Scanned bool           `json:"scanned"`
+	Scanned bool   `json:"scanned"`
+	Name    string `json:"name,omitempty"`
+	UserID  string `json:"userId,omitempty"`
+	Phone   string `json:"phone,omitempty"`
+	Avatar  string `json:"avatar,omitempty"`
+	// Profile giữ nguyên phản hồi thô để bên gọi cần gì thì tự đọc thêm.
 	Profile map[string]any `json:"profile,omitempty"`
 }
 
@@ -43,6 +48,8 @@ type QRSession struct {
 	Cookies     map[string]string
 	UserID      string
 	DisplayName string
+	Phone       string
+	Avatar      string
 }
 
 type SendResult struct {
@@ -58,6 +65,7 @@ type Client struct {
 	userAgent string
 	mu        sync.Mutex
 	qr        *QRChallenge
+	scanned   QRScan
 }
 
 func New(opts Options) (*Client, error) {
@@ -137,7 +145,31 @@ func (c *Client) CheckQRScan() (QRScan, error) {
 	if err != nil {
 		return QRScan{}, fmt.Errorf("check Zalo QR scan: %w", err)
 	}
-	return QRScan{Scanned: responseCode(profile) == 0, Profile: profile}, nil
+	scan := QRScan{Scanned: responseCode(profile) == 0, Profile: profile}
+	if scan.Scanned {
+		// Danh tính chỉ xuất hiện ở đúng lần quét này. Sau khi xác nhận, Zalo
+		// thường KHÔNG trả lại tên/uid nữa, nên phải giữ lại ngay.
+		payload := unwrapPayload(profile)
+		scan.Name = firstString(payload, "display_name", "displayName", "name")
+		scan.Avatar = firstString(payload, "avatar", "avatarUrl", "avatar_url", "avt")
+		scan.Phone = firstString(payload, "phone", "phone_number", "phoneNumber")
+		scan.UserID = firstID(payload, "uid", "userId", "user_id", "owner_id", "ownerId")
+		c.scanned = scan
+	}
+	return scan, nil
+}
+
+// unwrapPayload gỡ lớp bọc data/profile của phản hồi Zalo.
+func unwrapPayload(raw map[string]any) map[string]any {
+	if raw == nil {
+		return nil
+	}
+	for _, key := range []string{"data", "Data", "profile", "Profile"} {
+		if nested, ok := raw[key].(map[string]any); ok && nested != nil {
+			return nested
+		}
+	}
+	return raw
 }
 
 func (c *Client) WaitQRConfirm(ctx context.Context, interval time.Duration) (QRSession, error) {
@@ -194,11 +226,21 @@ func (c *Client) finishQR() (QRSession, error) {
 	if len(cookies) == 0 {
 		return QRSession{}, errors.New("zalo-kit: Zalo returned no session cookies after confirmation")
 	}
-	return QRSession{
+	session := QRSession{
 		Cookies:     cookies,
-		UserID:      c.api.UID(),
+		UserID:      strings.TrimSpace(c.api.UID()),
 		DisplayName: strings.TrimSpace(c.api.AccountName()),
-	}, nil
+		Phone:       c.scanned.Phone,
+		Avatar:      c.scanned.Avatar,
+	}
+	// Sau khi xác nhận, hai trường này hay rỗng; lấy lại từ lúc quét.
+	if session.UserID == "" {
+		session.UserID = c.scanned.UserID
+	}
+	if session.DisplayName == "" {
+		session.DisplayName = c.scanned.Name
+	}
+	return session, nil
 }
 
 func (c *Client) Listen(ctx context.Context, onMessage func(inbound.Message), onError func(error)) error {
