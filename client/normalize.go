@@ -22,14 +22,14 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 		SenderID:   cleanID(userID),
 		ThreadType: inbound.ThreadDirect,
 		Type:       classifyMessage(raw),
-		Text:       firstString(raw, "content", "message", "text", "title"),
-		MediaURL:   firstString(raw, "href", "url", "thumb", "thumbnail"),
+		Text:       contentText(raw),
+		MediaURL:   contentMedia(raw),
 		OccurredAt: parseTime(raw, fallback),
 	}
 	if msg.ID == "" {
 		msg.ID = cleanID(mid)
 	}
-	if msg.Text == "" {
+	if msg.Text == "" && !looksLikeDump(text) {
 		msg.Text = strings.TrimSpace(text)
 	}
 	if msg.SenderID == "" {
@@ -40,6 +40,69 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 	}
 	msg.IsSelf = msg.SenderID != "" && cleanID(selfID) == msg.SenderID
 	return msg
+}
+
+// contentText đọc phần chữ của tin.
+//
+// Với tin chia sẻ link hay ảnh, Zalo để content là một object chứ không phải
+// chuỗi, và zago đưa xuống đây bằng fmt.Sprint nên ra nguyên khối
+// "map[action: childnumber:0 description: href:https://... title:...]".
+// Dán khối đó vào hội thoại thì người đọc không hiểu gì, còn bot thì tốn token
+// đọc rác. Ở đây chỉ lấy tiêu đề và mô tả — đúng phần người ta thật sự viết.
+func contentText(raw map[string]any) string {
+	switch content := raw["content"].(type) {
+	case string:
+		if trimmed := strings.TrimSpace(content); trimmed != "" {
+			return trimmed
+		}
+	case map[string]any:
+		return joinParts(asText(content["title"]), asText(content["description"]))
+	}
+	return firstString(raw, "message", "text", "title")
+}
+
+// contentMedia lấy ảnh/link đính kèm, ưu tiên bên trong content vì tin chia sẻ
+// để href ở đó chứ không phải ở gốc.
+func contentMedia(raw map[string]any) string {
+	if content, ok := raw["content"].(map[string]any); ok {
+		if url := firstString(content, "href", "url", "thumb", "thumbnail"); url != "" {
+			return url
+		}
+	}
+	return firstString(raw, "href", "url", "thumb", "thumbnail")
+}
+
+// looksLikeDump nhận ra chuỗi do fmt.Sprint in ra từ map — thà để trống còn hơn
+// lưu một khối rác vào lịch sử hội thoại.
+func looksLikeDump(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "map[")
+}
+
+func asText(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func joinParts(parts ...string) string {
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" && !contains(kept, part) {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, " — ")
+}
+
+func contains(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyMessage(raw map[string]any) inbound.MessageType {
