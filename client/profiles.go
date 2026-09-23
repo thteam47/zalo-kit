@@ -88,8 +88,15 @@ func collectProfiles(value any, out map[string]Profile, depth int) {
 // profileFromMap chỉ nhận node có ĐỦ uid và tên: thiếu một trong hai thì đó là
 // mảnh dữ liệu khác, ghi vào sẽ đè hỏng hồ sơ đang đúng.
 func profileFromMap(raw map[string]any) (Profile, bool) {
-	uid := firstID(raw, "userId", "uid", "userid", "id")
-	name := firstString(raw, "zaloName", "displayName", "dName", "name", "username")
+	// ⚠️ Nhận CẢ hai lối viết khoá.
+	//
+	// FetchUserInfo trả camelCase, nhưng tra-số-điện-thoại đi một endpoint KHÁC
+	// (friend/profile/get) và ta chưa thấy dạng thật của nó. Nhận thêm snake_case
+	// không tốn gì; đoán thiếu thì chức năng tìm người ÂM THẦM không bao giờ ra
+	// kết quả, và triệu chứng giống hệt "số này chưa có Zalo".
+	uid := firstID(raw, "userId", "uid", "userid", "id", "user_id")
+	name := firstString(raw, "zaloName", "displayName", "dName", "name", "username",
+		"zalo_name", "display_name")
 	if uid == "" || name == "" {
 		return Profile{}, false
 	}
