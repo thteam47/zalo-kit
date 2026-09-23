@@ -243,19 +243,41 @@ func (c *Client) finishQR() (QRSession, error) {
 	return session, nil
 }
 
-// Event là một sự kiện ngoài tin nhắn: tin đã tới máy, hoặc khách đã xem.
+// Event là một sự kiện ngoài tin nhắn: đã nhận, đã xem, biến động trong nhóm,
+// lỗi đường truyền, hoặc tải tệp xong.
+//
+// Một kiểu chung cho cả năm loại thay vì năm channel: nơi gọi chỉ phải nối MỘT
+// chỗ, và thêm loại mới không bắt nó sửa chữ ký hàm.
 type Event struct {
 	Kind      EventKind
 	ThreadID  string
 	MessageID string
 	At        time.Time
+
+	// GroupEventType chỉ có ở EventGroup: "join", "leave", "remove_member",
+	// "add_admin"… Để nguyên văn chuỗi của Zalo chứ không dựng enum riêng —
+	// Zalo thêm loại mới bất cứ lúc nào, và enum của ta thiếu một giá trị thì
+	// sự kiện đó thành "unknown" rồi bị bỏ im lặng.
+	GroupEventType string
+	// Data là nội dung thô của sự kiện nhóm.
+	Data map[string]any
+
+	// Err chỉ có ở EventSocketError.
+	Err error
+
+	// FileID/FileURL chỉ có ở EventUploadDone.
+	FileID  string
+	FileURL string
 }
 
 type EventKind string
 
 const (
-	EventDelivered EventKind = "delivered"
-	EventSeen      EventKind = "seen"
+	EventDelivered   EventKind = "delivered"
+	EventSeen        EventKind = "seen"
+	EventGroup       EventKind = "group"
+	EventSocketError EventKind = "socket_error"
+	EventUploadDone  EventKind = "upload_done"
 )
 
 func (c *Client) Listen(ctx context.Context, onMessage func(inbound.Message), onError func(error)) error {
@@ -342,6 +364,9 @@ func (c *Client) SendText(_ context.Context, threadID string, threadType inbound
 func (c *Client) runEvents(ctx context.Context, onEvent func(Event)) {
 	delivered := c.api.DeliveryEvents()
 	seen := c.api.SeenEvents()
+	groups := c.api.GroupEvents()
+	socketErrs := c.api.SocketErrors()
+	uploads := c.api.UploadEvents()
 	for {
 		select {
 		case <-ctx.Done():
@@ -358,19 +383,61 @@ func (c *Client) runEvents(ctx context.Context, onEvent func(Event)) {
 				continue
 			}
 			phatSuKien(onEvent, EventSeen, evt.ThreadID, evt.MsgIDs, evt.Timestamp)
+		case evt, ok := <-groups:
+			if !ok {
+				groups = nil
+				continue
+			}
+			onEvent(suKienNhom(evt))
+		case evt, ok := <-socketErrs:
+			if !ok {
+				socketErrs = nil
+				continue
+			}
+			onEvent(Event{Kind: EventSocketError, Err: evt.Err, At: mocThoiGian(evt.Timestamp)})
+		case evt, ok := <-uploads:
+			if !ok {
+				uploads = nil
+				continue
+			}
+			onEvent(Event{Kind: EventUploadDone, FileID: evt.FileID,
+				FileURL: evt.FileURL, At: time.Now().UTC()})
 		}
 	}
 }
 
-func phatSuKien(onEvent func(Event), kind EventKind, threadID string, msgIDs any, ts int64) {
-	at := time.Now().UTC()
-	if ts > 0 {
-		if ts > 1_000_000_000_000 {
-			at = time.UnixMilli(ts).UTC()
-		} else {
-			at = time.Unix(ts, 0).UTC()
-		}
+// suKienNhom đổi phong bì sự kiện nhóm của zago sang dạng của ta.
+//
+// ⚠️ evt.Event là CON TRỎ và zago có nhánh gửi nil. Gọi ToMap() trên nil là
+// panic, mà panic ở đây giết luôn vòng rút channel — mọi sự kiện sau đó biến
+// mất im lặng.
+func suKienNhom(evt zago.GroupEventEnvelope) Event {
+	out := Event{
+		Kind:           EventGroup,
+		GroupEventType: string(evt.EventType),
+		At:             time.Now().UTC(),
 	}
+	if evt.Event == nil {
+		return out
+	}
+	out.Data = evt.Event.ToMap()
+	out.ThreadID = firstID(out.Data, "groupId", "grid", "threadId", "group_id")
+	out.MessageID = firstID(out.Data, "msgId", "globalMsgId")
+	return out
+}
+
+func mocThoiGian(ts int64) time.Time {
+	if ts <= 0 {
+		return time.Now().UTC()
+	}
+	if ts > 1_000_000_000_000 {
+		return time.UnixMilli(ts).UTC()
+	}
+	return time.Unix(ts, 0).UTC()
+}
+
+func phatSuKien(onEvent func(Event), kind EventKind, threadID string, msgIDs any, ts int64) {
+	at := mocThoiGian(ts)
 	for _, id := range tachMaTin(msgIDs) {
 		onEvent(Event{Kind: kind, ThreadID: cleanID(threadID), MessageID: id, At: at})
 	}
