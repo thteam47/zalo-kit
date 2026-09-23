@@ -243,7 +243,31 @@ func (c *Client) finishQR() (QRSession, error) {
 	return session, nil
 }
 
+// Event là một sự kiện ngoài tin nhắn: tin đã tới máy, hoặc khách đã xem.
+type Event struct {
+	Kind      EventKind
+	ThreadID  string
+	MessageID string
+	At        time.Time
+}
+
+type EventKind string
+
+const (
+	EventDelivered EventKind = "delivered"
+	EventSeen      EventKind = "seen"
+)
+
 func (c *Client) Listen(ctx context.Context, onMessage func(inbound.Message), onError func(error)) error {
+	return c.ListenWithEvents(ctx, onMessage, nil, onError)
+}
+
+// ListenWithEvents giống Listen nhưng nhận thêm luồng đã-nhận / đã-xem.
+//
+// Giữ Listen cũ nguyên chữ ký: nơi gọi không cần sự kiện thì không phải sửa,
+// và truyền nil có nghĩa là KHÔNG rút channel — xem cảnh báo ở dưới.
+func (c *Client) ListenWithEvents(ctx context.Context, onMessage func(inbound.Message),
+	onEvent func(Event), onError func(error)) error {
 	c.api.SetMessageListener(func(mid, userID, text string, data *zago.MessageObject, threadID string, tt zago.ThreadType) {
 		if onMessage != nil {
 			onMessage(normalizeMessage(c.accountID, c.api.UserID(), mid, userID, text, data, threadID, tt, time.Now().UTC()))
@@ -254,6 +278,15 @@ func (c *Client) Listen(ctx context.Context, onMessage func(inbound.Message), on
 			onError(err)
 		}
 	})
+	// Luồng sự kiện đã-nhận / đã-xem.
+	//
+	// ⚠️ Trước đây chỉ đăng ký bộ lắng nghe TIN NHẮN, nên hai kênh này bị bỏ
+	// trống hoàn toàn: hệ thống không bao giờ biết tin đã tới máy khách hay khách
+	// đã xem. Đây là channel chứ không phải callback, nên phải có vòng rút — không
+	// rút thì zago đầy channel rồi nghẽn chính vòng nhận tin.
+	if onEvent != nil {
+		go c.runEvents(ctx, onEvent)
+	}
 	done := make(chan error, 1)
 	go func() { done <- c.api.Listen(false, 0) }()
 	select {
@@ -299,4 +332,77 @@ func (c *Client) SendText(_ context.Context, threadID string, threadType inbound
 	}
 	ids := extractIDs(raw)
 	return SendResult{MessageID: ids["msgId"], ClientMessageID: ids["cliMsgId"], Raw: raw}, nil
+}
+
+// runEvents rút hai channel sự kiện của zago cho tới khi ngắt.
+//
+// ⚠️ Zalo gửi MẢNG mã tin trong một sự kiện (MsgIDs là `any`, thực tế là mảng
+// hoặc một chuỗi). Chuẩn hoá tại đây thành từng sự kiện một để bên gọi không
+// phải đoán lại hình dạng.
+func (c *Client) runEvents(ctx context.Context, onEvent func(Event)) {
+	delivered := c.api.DeliveryEvents()
+	seen := c.api.SeenEvents()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-delivered:
+			if !ok {
+				delivered = nil
+				continue
+			}
+			phatSuKien(onEvent, EventDelivered, evt.ThreadID, evt.MsgIDs, evt.Timestamp)
+		case evt, ok := <-seen:
+			if !ok {
+				seen = nil
+				continue
+			}
+			phatSuKien(onEvent, EventSeen, evt.ThreadID, evt.MsgIDs, evt.Timestamp)
+		}
+	}
+}
+
+func phatSuKien(onEvent func(Event), kind EventKind, threadID string, msgIDs any, ts int64) {
+	at := time.Now().UTC()
+	if ts > 0 {
+		if ts > 1_000_000_000_000 {
+			at = time.UnixMilli(ts).UTC()
+		} else {
+			at = time.Unix(ts, 0).UTC()
+		}
+	}
+	for _, id := range tachMaTin(msgIDs) {
+		onEvent(Event{Kind: kind, ThreadID: cleanID(threadID), MessageID: id, At: at})
+	}
+}
+
+// tachMaTin đọc MsgIDs ở mọi dạng Zalo từng trả: một chuỗi, một số, hoặc mảng.
+func tachMaTin(raw any) []string {
+	switch value := raw.(type) {
+	case nil:
+		return nil
+	case string:
+		if id := cleanID(value); id != "" {
+			return []string{id}
+		}
+	case []string:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if id := cleanID(item); id != "" {
+				out = append(out, id)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			out = append(out, tachMaTin(item)...)
+		}
+		return out
+	default:
+		if id := cleanID(fmt.Sprintf("%v", value)); id != "" {
+			return []string{id}
+		}
+	}
+	return nil
 }

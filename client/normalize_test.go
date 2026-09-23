@@ -83,3 +83,23 @@ func TestPlainTextUnchanged(t *testing.T) {
 		t.Fatalf("tin chữ phải giữ nguyên, nhận %q", got.Text)
 	}
 }
+
+// Loại thô của Zalo phải giữ nguyên văn.
+//
+// ⚠️ classifyMessage đổi MỌI loại chứa chữ "chat" thành tin chữ — kể cả
+// "chat.undo" (thu hồi). Không giữ msgType gốc thì một sự kiện thu hồi đi vào
+// lịch sử NHƯ MỘT TIN THẬT, tệ hơn cả bỏ qua nó.
+func TestGiuNguyenLoaiThoCuaZalo(t *testing.T) {
+	for raw, muon := range map[string]string{
+		"webchat":    "webchat",
+		"chat.undo":  "chat.undo",
+		"chat.photo": "chat.photo",
+	} {
+		msg := normalizeMessage("acc", "me", "m1", "u1", "",
+			zago.NewMessageObject(map[string]any{"msgId": "m1", "msgType": raw}),
+			"t1", zago.ThreadTypeUSER, time.Time{})
+		if msg.RawType != muon {
+			t.Errorf("msgType %q: giữ thành %q", raw, msg.RawType)
+		}
+	}
+}

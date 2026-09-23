@@ -22,6 +22,7 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 		SenderID:   cleanID(userID),
 		ThreadType: inbound.ThreadDirect,
 		Type:       classifyMessage(raw),
+		RawType:    strings.TrimSpace(firstString(raw, "msgType", "type", "contentType")),
 		Text:       contentText(raw),
 		MediaURL:   contentMedia(raw),
 		OccurredAt: parseTime(raw, fallback),
