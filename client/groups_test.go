@@ -182,3 +182,43 @@ func TestLoiNoiRoViecGiHong(t *testing.T) {
 		t.Errorf("nhận %q", err)
 	}
 }
+
+// Ô trạng thái phải chịu được client chưa đăng nhập, không panic.
+//
+// Hộp thư đọc mấy ô này ở mỗi lần vẽ lại, kể cả lúc phiên vừa rụng.
+func TestOTrangThaiChiuDuocPhienRong(t *testing.T) {
+	c := &Client{}
+	if c.IsReady() || c.IsListening() {
+		t.Error("chưa có phiên mà báo sẵn sàng")
+	}
+	if c.ClientID() != "" || c.ProxyURL() != "" {
+		t.Error("chưa có phiên mà trả mã máy khách hoặc proxy")
+	}
+}
+
+// Thả cảm xúc 0 lần: Zalo nhận rồi KHÔNG làm gì và vẫn trả 200, nên bên gọi
+// tưởng đã thả mà không có gì xuất hiện.
+func TestThaCamXucKhongLanBiChan(t *testing.T) {
+	c := &Client{}
+	err := c.SendMultiReaction("t1", inbound.ThreadDirect, MessageRef{MsgID: "m1"}, "/-strong", 0)
+	if err == nil || errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("phải chặn sớm, nhận %v", err)
+	}
+}
+
+// Gọi thoại cũng phải chặn đầu vào rỗng trước khi kiểm phiên.
+func TestGoiThoaiChanDauVaoRong(t *testing.T) {
+	c := &Client{}
+	cases := map[string]error{
+		"StartCall không mã cuộc gọi": func() error { _, err := c.StartCall("u1", " "); return err }(),
+		"StartGroupCall không ai":     func() error { _, err := c.StartGroupCall("g1", nil); return err }(),
+		"CancelGroupCall không mã":    c.CancelGroupCall("g1", "", ""),
+		"GroupInfoV2 rỗng":            func() error { _, err := c.GroupInfoV2(nil); return err }(),
+		"SyncPersonalStickers rỗng":   c.SyncPersonalStickers(nil, 1),
+	}
+	for ten, err := range cases {
+		if err == nil || errors.Is(err, ErrSessionInvalid) {
+			t.Errorf("%s: phải chặn sớm, nhận %v", ten, err)
+		}
+	}
+}
