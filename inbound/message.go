@@ -5,12 +5,12 @@ import "time"
 // Message is the stable, transport-independent representation consumed by
 // products using zalo-kit. Raw provider payloads must not escape the adapter.
 type Message struct {
-	ID          string
-	AccountID   string
-	ThreadID    string
-	SenderID    string
-	ThreadType  ThreadType
-	Type        MessageType
+	ID         string
+	AccountID  string
+	ThreadID   string
+	SenderID   string
+	ThreadType ThreadType
+	Type       MessageType
 	// RawType là msgType NGUYÊN VĂN của Zalo, ví dụ "webchat", "chat.photo",
 	// "chat.undo".
 	//

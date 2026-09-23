@@ -42,7 +42,7 @@ func TestChanDauVaoRong(t *testing.T) {
 // mà triệu chứng lại giống hệt "số này chưa có Zalo".
 func TestNhatHoSoTuDangZaloTraVe(t *testing.T) {
 	for ten, node := range map[string]map[string]any{
-		"camelCase": {"uid": "123456789", "displayName": "Chị Lan", "avatar": "https://x/y.jpg"},
+		"camelCase":  {"uid": "123456789", "displayName": "Chị Lan", "avatar": "https://x/y.jpg"},
 		"snake_case": {"user_id": "123456789", "display_name": "Chị Lan"},
 	} {
 		found := map[string]Profile{}

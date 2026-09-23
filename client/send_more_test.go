@@ -16,16 +16,16 @@ import (
 func TestMoiHanhDongGuiChanDauVaoRongTruoc(t *testing.T) {
 	c := &Client{accountID: "acc-1"} // api == nil, tức phiên hỏng
 	cases := map[string]func() error{
-		"tệp":         func() error { return c.SendFile("", inbound.ThreadDirect, "", "a.pdf", "pdf", 1) },
-		"video":       func() error { return c.SendVideo("", inbound.ThreadDirect, "", "", "", 1, 1, 1) },
-		"thoại":       func() error { return c.SendVoice("", inbound.ThreadDirect, "", 1) },
-		"nhãn dán":    func() error { return c.SendSticker("", inbound.ThreadDirect, 1, 1, 1) },
-		"đường dẫn":   func() error { return c.SendLink("", inbound.ThreadDirect, "", "") },
-		"nhiều ảnh":   func() error { return c.SendMultiImage("", inbound.ThreadDirect, nil, "", 1, 1) },
-		"trích dẫn":   func() error { return c.SendQuote("t", inbound.ThreadDirect, "", Quote{}) },
-		"thu hồi":     func() error { return c.UndoMessage("", inbound.ThreadDirect, "", "") },
-		"đã xem":      func() error { return c.MarkAsRead("", inbound.ThreadDirect, "", "", "") },
-		"đã nhận":     func() error { return c.MarkAsDelivered("", inbound.ThreadDirect, "", "", "") },
+		"tệp":       func() error { return c.SendFile("", inbound.ThreadDirect, "", "a.pdf", "pdf", 1) },
+		"video":     func() error { return c.SendVideo("", inbound.ThreadDirect, "", "", "", 1, 1, 1) },
+		"thoại":     func() error { return c.SendVoice("", inbound.ThreadDirect, "", 1) },
+		"nhãn dán":  func() error { return c.SendSticker("", inbound.ThreadDirect, 1, 1, 1) },
+		"đường dẫn": func() error { return c.SendLink("", inbound.ThreadDirect, "", "") },
+		"nhiều ảnh": func() error { return c.SendMultiImage("", inbound.ThreadDirect, nil, "", 1, 1) },
+		"trích dẫn": func() error { return c.SendQuote("t", inbound.ThreadDirect, "", Quote{}) },
+		"thu hồi":   func() error { return c.UndoMessage("", inbound.ThreadDirect, "", "") },
+		"đã xem":    func() error { return c.MarkAsRead("", inbound.ThreadDirect, "", "", "") },
+		"đã nhận":   func() error { return c.MarkAsDelivered("", inbound.ThreadDirect, "", "", "") },
 	}
 	for ten, goi := range cases {
 		err := goi()
@@ -48,7 +48,9 @@ func TestPhienHongThiBaoPhienHong(t *testing.T) {
 		"thoại":     func() error { return c.SendVoice("t1", inbound.ThreadDirect, "https://x/v.m4a", 10) },
 		"nhãn dán":  func() error { return c.SendSticker("t1", inbound.ThreadDirect, 1, 2, 3) },
 		"đường dẫn": func() error { return c.SendLink("t1", inbound.ThreadDirect, "https://x", "xem nhé") },
-		"nhiều ảnh": func() error { return c.SendMultiImage("t1", inbound.ThreadDirect, []string{"https://x/1.jpg"}, "", 1, 1) },
+		"nhiều ảnh": func() error {
+			return c.SendMultiImage("t1", inbound.ThreadDirect, []string{"https://x/1.jpg"}, "", 1, 1)
+		},
 		"trích dẫn": func() error { return c.SendQuote("t1", inbound.ThreadDirect, "dạ", Quote{MsgID: "m1"}) },
 		"thu hồi":   func() error { return c.UndoMessage("t1", inbound.ThreadDirect, "m1", "c1") },
 		"đã xem":    func() error { return c.MarkAsRead("t1", inbound.ThreadDirect, "m1", "c1", "u1") },
