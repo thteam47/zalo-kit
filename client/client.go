@@ -292,7 +292,11 @@ func (c *Client) ListenWithEvents(ctx context.Context, onMessage func(inbound.Me
 	onEvent func(Event), onError func(error)) error {
 	c.api.SetMessageListener(func(mid, userID, text string, data *zago.MessageObject, threadID string, tt zago.ThreadType) {
 		if onMessage != nil {
-			onMessage(normalizeMessage(c.accountID, c.api.UserID(), mid, userID, text, data, threadID, tt, time.Now().UTC()))
+			msg := normalizeMessage(c.accountID, c.api.UserID(), mid, userID, text, data, threadID, tt, time.Now().UTC())
+			if msg.Type == inbound.MessageSticker && data != nil {
+				msg = c.fillStickerMedia(msg, data.ToMap())
+			}
+			onMessage(msg)
 		}
 	})
 	c.api.SetErrorListener(func(err error, _ int64) {
