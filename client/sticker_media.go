@@ -43,18 +43,11 @@ func stickerIDOf(raw map[string]any) int {
 	default:
 		return 0
 	}
-	switch id := content["id"].(type) {
-	case float64:
-		return int(id)
-	case int:
-		return id
-	case int64:
-		return int(id)
-	case string:
-		n, _ := strconv.Atoi(strings.TrimSpace(id))
-		return n
-	}
-	return 0
+	// ⚠️ za-go giải JSON bằng UseNumber: số đến dưới dạng json.Number, KHÔNG
+	// phải float64. Bản đầu chỉ bắt float64/int/string nên mọi nhãn dán thật đều
+	// ra mã 0 → không có ảnh. cleanID đọc được mọi kiểu số.
+	n, _ := strconv.Atoi(cleanID(content["id"]))
+	return n
 }
 
 // fillStickerMedia gắn ảnh cho tin nhãn dán còn thiếu MediaURL.

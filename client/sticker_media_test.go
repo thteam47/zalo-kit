@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/thteam47/zalo-kit/inbound"
@@ -13,6 +14,8 @@ func TestStickerIDOfDocSoVaChuoi(t *testing.T) {
 	}{
 		{map[string]any{"content": map[string]any{"id": float64(46991), "catId": float64(10)}}, 46991},
 		{map[string]any{"content": map[string]any{"id": " 123 "}}, 123},
+		// Dữ liệu THẬT từ za-go: số là json.Number (UseNumber).
+		{map[string]any{"content": map[string]any{"id": json.Number("46991"), "catId": json.Number("10")}}, 46991},
 		{map[string]any{"content": "chữ thường"}, 0},
 		{map[string]any{"content": `{"id":46991,"catId":10,"type":7}`}, 46991},
 		{map[string]any{}, 0},
