@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -358,6 +359,47 @@ func (c *Client) SendText(_ context.Context, threadID string, threadType inbound
 	}
 	ids := extractIDs(raw)
 	return SendResult{MessageID: ids["msgId"], ClientMessageID: ids["cliMsgId"], Raw: raw}, nil
+}
+
+// SendTextQuote gửi tin chữ TRẢ LỜI (trích dẫn) một tin có sẵn.
+//
+// Zalo dựng khối trích dẫn từ msgId + cliMsgId + uid người viết tin gốc;
+// thiếu cliMsgId thì không trích được — trả lỗi thay vì âm thầm gửi tin
+// thường, để bên gọi quyết định.
+func (c *Client) SendTextQuote(_ context.Context, threadID string, threadType inbound.ThreadType, text string, quote inbound.Quote) (SendResult, error) {
+	if strings.TrimSpace(threadID) == "" || strings.TrimSpace(text) == "" {
+		return SendResult{}, errors.New("zalo-kit: thread ID and text are required")
+	}
+	if !quote.CanSend() {
+		return SendResult{}, errors.New("zalo-kit: tin gốc thiếu msgId/cliMsgId, không trích dẫn được")
+	}
+	c.mu.Lock()
+	owner := strings.TrimSpace(quote.OwnerID)
+	if owner == "" {
+		owner = c.api.UserID()
+	}
+	raw, err := c.api.SendMessageQuote(zago.Message{Text: text}, quoteInfo(quote, owner), threadID, zaloThreadType(threadType))
+	c.mu.Unlock()
+	if err != nil {
+		return SendResult{}, fmt.Errorf("send Zalo quote: %w", err)
+	}
+	ids := extractIDs(raw)
+	return SendResult{MessageID: ids["msgId"], ClientMessageID: ids["cliMsgId"], Raw: raw}, nil
+}
+
+func quoteInfo(quote inbound.Quote, owner string) zago.QuoteInfo {
+	msgType := strings.TrimSpace(quote.MsgType)
+	if msgType == "" {
+		msgType = "webchat"
+	}
+	ts := ""
+	if !quote.OccurredAt.IsZero() {
+		ts = strconv.FormatInt(quote.OccurredAt.UnixMilli(), 10)
+	}
+	return zago.QuoteInfo{
+		OwnerID: owner, MsgID: quote.MessageID, CliMsgID: quote.ClientMessageID,
+		MsgType: msgType, Ts: ts, Content: quote.Text,
+	}
 }
 
 // runEvents rút hai channel sự kiện của zago cho tới khi ngắt.

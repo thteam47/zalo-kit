@@ -40,7 +40,33 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 		msg.ThreadType = inbound.ThreadGroup
 	}
 	msg.IsSelf = msg.SenderID != "" && cleanID(selfID) == msg.SenderID
+	msg.ClientMessageID = firstID(raw, "cliMsgId")
+	msg.Quote = quoteOf(raw)
 	return msg
+}
+
+// quoteOf đọc khối trích dẫn khi tin này trả lời một tin khác. Zalo đặt nó ở
+// raw["quote"] với ownerId / globalMsgId / cliMsgId / msg / ts (số hoặc chuỗi).
+func quoteOf(raw map[string]any) *inbound.Quote {
+	block, ok := raw["quote"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	quote := &inbound.Quote{
+		OwnerID:         firstID(block, "ownerId", "uidFrom"),
+		MessageID:       firstID(block, "globalMsgId", "msgId"),
+		ClientMessageID: firstID(block, "cliMsgId"),
+		Text:            strings.TrimSpace(firstString(block, "msg")),
+	}
+	if ts := firstID(block, "ts"); ts != "" {
+		if ms, err := strconv.ParseInt(ts, 10, 64); err == nil && ms > 0 {
+			quote.OccurredAt = time.UnixMilli(ms).UTC()
+		}
+	}
+	if quote.MessageID == "" && quote.ClientMessageID == "" {
+		return nil
+	}
+	return quote
 }
 
 // contentText đọc phần chữ của tin.

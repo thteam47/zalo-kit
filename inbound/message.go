@@ -33,6 +33,30 @@ type Message struct {
 	// nhận tin mới biết lúc nào nên gọi, lúc nào đọc lại từ bộ đệm của mình.
 	// Trường nằm ở đây để giá trị đó đi cùng tin qua mọi tầng phía sau.
 	ThreadGlobalID string
+	// ClientMessageID là cliMsgId của Zalo. Muốn TRẢ LỜI (trích dẫn) một tin
+	// thì Zalo đòi cả msgId lẫn cliMsgId của tin đó — thiếu là không trích được.
+	ClientMessageID string
+	// Quote có mặt khi tin này trả lời (trích dẫn) một tin khác.
+	Quote *Quote
+}
+
+// Quote là một tin được trích dẫn: dùng cả khi ĐỌC (tin đến trả lời tin nào)
+// lẫn khi GỬI (mình trả lời tin nào).
+type Quote struct {
+	// OwnerID là uid người viết tin gốc. Để rỗng khi gửi = tin gốc của chính
+	// nick đang gửi; zalo-kit tự điền uid của nick.
+	OwnerID         string
+	MessageID       string // msgId / globalMsgId của tin gốc
+	ClientMessageID string // cliMsgId của tin gốc
+	MsgType         string // msgType gốc, vd "webchat"; rỗng = "webchat"
+	Text            string // phần chữ của tin gốc
+	// OccurredAt là lúc tin gốc được gửi; Zalo cần mốc này để dựng khối trích.
+	OccurredAt time.Time
+}
+
+// CanSend: đủ thông tin để Zalo dựng khối trích dẫn.
+func (q Quote) CanSend() bool {
+	return q.MessageID != "" && q.ClientMessageID != ""
 }
 
 type ThreadType string
