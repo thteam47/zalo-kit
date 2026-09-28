@@ -27,6 +27,12 @@ type Message struct {
 	IsSelf      bool
 	MentionsBot bool
 	OccurredAt  time.Time
+	// ThreadGlobalID là globalId của luồng (của khách, với chat riêng).
+	//
+	// zalo-kit KHÔNG tự điền: đổi uid ra globalId là một lời gọi Zalo, và bên
+	// nhận tin mới biết lúc nào nên gọi, lúc nào đọc lại từ bộ đệm của mình.
+	// Trường nằm ở đây để giá trị đó đi cùng tin qua mọi tầng phía sau.
+	ThreadGlobalID string
 }
 
 type ThreadType string
