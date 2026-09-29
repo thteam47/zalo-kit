@@ -42,6 +42,15 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 	msg.IsSelf = msg.SenderID != "" && cleanID(selfID) == msg.SenderID
 	msg.ClientMessageID = firstID(raw, "cliMsgId")
 	msg.Quote = quoteOf(raw)
+	// Hai loại "tin" không phải lời ai nói, phải tách ra TRƯỚC khi tới bên
+	// nhận: trước đây cả hai rơi vào nhánh tin chữ — thả tim trên điện thoại
+	// thành một bong bóng "[Tin nhắn]" trống, cuộc gọi thành chữ
+	// "sendBubbleMessage — Cuộc gọi".
+	if reaction := reactionOf(raw); reaction != nil {
+		msg.Type, msg.Reaction, msg.Text, msg.MediaURL = inbound.MessageReaction, reaction, "", ""
+	} else if call := callOf(raw); call != nil {
+		msg.Type, msg.Call, msg.Text, msg.MediaURL = inbound.MessageCall, call, CallSummary(*call), ""
+	}
 	return msg
 }
 

@@ -38,6 +38,28 @@ type Message struct {
 	ClientMessageID string
 	// Quote có mặt khi tin này trả lời (trích dẫn) một tin khác.
 	Quote *Quote
+	// Reaction có mặt khi đây là SỰ KIỆN thả cảm xúc lên một tin (Type =
+	// MessageReaction) — KHÔNG phải một tin mới. Bên nhận phải gắn nó vào tin
+	// đích, đừng ghi thành một dòng trong hội thoại.
+	Reaction *Reaction
+	// Call có mặt khi đây là bản ghi một cuộc gọi Zalo (Type = MessageCall).
+	Call *Call
+}
+
+// Reaction là một lượt thả (hoặc gỡ, khi Icon rỗng) cảm xúc lên một tin.
+type Reaction struct {
+	// Icon là mã Zalo: "/-heart", "/-strong", ":>"… Rỗng = gỡ cảm xúc.
+	Icon string
+	// TargetMessageID / TargetClientMessageID: msgId / cliMsgId của tin đích.
+	TargetMessageID       string
+	TargetClientMessageID string
+}
+
+// Call là bản ghi một cuộc gọi thoại/video trong hội thoại.
+type Call struct {
+	Video       bool
+	Missed      bool
+	DurationSec int
 }
 
 // Quote là một tin được trích dẫn: dùng cả khi ĐỌC (tin đến trả lời tin nào)
@@ -74,6 +96,10 @@ const (
 	MessageFile    MessageType = "file"
 	MessageSticker MessageType = "sticker"
 	MessageUnknown MessageType = "unknown"
+	// MessageReaction: sự kiện thả cảm xúc, xem Message.Reaction.
+	MessageReaction MessageType = "reaction"
+	// MessageCall: bản ghi cuộc gọi, xem Message.Call.
+	MessageCall MessageType = "call"
 )
 
 func (m Message) Valid() bool {
