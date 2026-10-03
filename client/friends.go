@@ -40,6 +40,10 @@ func (c *Client) FindByPhone(phone string) (Profile, error) {
 	collectProfiles(raw, found, 0)
 	for _, profile := range found {
 		if strings.TrimSpace(profile.UserID) != "" {
+			// Endpoint tra số CHƯA xác minh bảng mã giới tính (có thể 1/2 chứ
+			// không phải 0/1 như hồ sơ). Bỏ hẳn thay vì gọi sai giới khách; giới
+			// tính sẽ lấy lại đúng qua FetchProfiles khi khách nhắn.
+			profile.Gender = ""
 			return profile, nil
 		}
 	}

@@ -7,21 +7,40 @@ import (
 	"time"
 )
 
-// Profile là tên và ảnh đại diện của một người trên Zalo. Hộp thư cần nó để gọi
-// khách bằng tên thật thay vì dãy số thread id.
+// Profile là mọi thứ Zalo cho biết về một người. Hộp thư cần tên để gọi khách,
+// bot cần giới tính + tên gọi để xưng hô; còn lại (bio, ảnh bìa, username…) là
+// để nhân viên hiểu khách. Lấy được gì giữ nấy: hỏi lại Zalo tốn hạn mức.
 type Profile struct {
-	UserID      string
+	UserID string
+	// DisplayName là tên dùng để hiển thị — ưu tiên tên Zalo gốc của người đó.
 	DisplayName string
-	Avatar      string
-	Phone       string
-	// Gender là "male"/"female" nếu Zalo có trả. Zalo mã hoá bằng SỐ và không
-	// thống nhất giữa các endpoint, nên đọc rộng rồi chuẩn hoá ở normalizeGender.
-	//
-	// Rỗng là chuyện thường: khách để riêng tư thì không có field này. Bên gọi
-	// PHẢI chịu được rỗng chứ đừng coi là lỗi.
+	// ZaloName là tên người đó tự đặt; Alias là tên gợi nhớ CHÍNH nick shop đặt
+	// cho họ (Zalo trả trong displayName khi hai bên là bạn). Giữ cả hai: tên
+	// gợi nhớ hay mang thông tin quý ("Lan - sỉ Hà Đông").
+	ZaloName string
+	Alias    string
+	Username string
+	Avatar   string
+	Cover    string
+	Phone    string
+	// Bio là dòng trạng thái/giới thiệu ("status" trên dây).
+	Bio string
+	// Gender là "male"/"female" nếu Zalo có trả. Rỗng là chuyện thường: khách
+	// để riêng tư thì không có field này. Bên gọi PHẢI chịu được rỗng.
 	Gender string
-	// DOB dạng "2006-01-02" nếu đọc được.
+	// DOB dạng "2006-01-02" khi đọc được ĐỦ ngày-tháng-năm.
 	DOB string
+	// BirthdayMonthDay dạng "01-02" (tháng-ngày) — khách ẩn năm sinh (rất
+	// phổ biến) vẫn chúc sinh nhật được.
+	BirthdayMonthDay string
+	GlobalID         string
+	// Con trỏ: nil = Zalo không nói, khác với false.
+	IsFriend  *bool
+	IsBlocked *bool
+	IsActive  *bool
+	// Raw là các trường vô hướng (chuỗi/số/bool) đúng như Zalo trả — để lưu lại
+	// trường mình chưa biết dùng vào việc gì mà không phải hỏi Zalo lần nữa.
+	Raw map[string]any
 }
 
 // FetchProfiles đọc thông tin của nhiều uid trong một lần gọi.
@@ -100,27 +119,134 @@ func profileFromMap(raw map[string]any) (Profile, bool) {
 	if uid == "" || name == "" {
 		return Profile{}, false
 	}
+	zaloName := firstString(raw, "zaloName", "zalo_name")
+	alias := firstString(raw, "displayName", "display_name", "dName")
+	if alias == zaloName {
+		alias = ""
+	}
+	sdob, _ := firstScalar(raw, "sdob", "birthday", "birthDate")
+	dobNum, _ := firstScalar(raw, "dob")
+	dob := normalizeDOB(sdob)
+	if dob == "" {
+		dob = normalizeDOB(dobNum)
+	}
+	monthDay := ""
+	if dob != "" {
+		monthDay = dob[5:]
+	} else {
+		monthDay = normalizeMonthDay(sdob)
+	}
+	// ⚠️ Giới tính là SỐ trên dây (json.Number từ za-go) và 0 = NAM. firstString
+	// chỉ nhận chuỗi nên từng làm rơi MỌI giới tính; cleanID lại coi "0" là rỗng
+	// nên làm rơi mọi người nam. firstScalar giữ nguyên "0".
+	genderRaw, _ := firstScalar(raw, "gender", "sex", "genderId")
 	return Profile{
-		UserID:      uid,
-		DisplayName: name,
-		Avatar:      firstString(raw, "avatar", "avatarUrl", "avatar_url"),
-		Phone:       firstString(raw, "phoneNumber", "phone"),
-		Gender:      normalizeGender(firstString(raw, "gender", "sex", "genderId")),
-		DOB:         normalizeDOB(firstString(raw, "sdob", "dob", "birthday", "birthDate")),
+		UserID:           uid,
+		DisplayName:      name,
+		ZaloName:         zaloName,
+		Alias:            alias,
+		Username:         firstString(raw, "username", "uname", "zaloUsername"),
+		Avatar:           firstString(raw, "avatar", "avatarUrl", "avatar_url", "avt"),
+		Cover:            firstString(raw, "cover", "coverUrl"),
+		Phone:            firstString(raw, "phoneNumber", "phone", "phone_number"),
+		Bio:              firstString(raw, "status", "bio", "description"),
+		Gender:           normalizeGender(genderRaw),
+		DOB:              dob,
+		BirthdayMonthDay: monthDay,
+		GlobalID:         firstString(raw, "globalId", "global_id"),
+		IsFriend:         firstFlag(raw, "isFr", "is_fr", "isFriend"),
+		IsBlocked:        firstFlag(raw, "isBlocked", "is_blocked"),
+		IsActive:         firstFlag(raw, "isActive", "is_active"),
+		Raw:              scalarFields(raw),
 	}, true
+}
+
+// firstScalar đọc giá trị vô hướng đầu tiên thành chuỗi, GIỮ "0". za-go trả số
+// dưới dạng json.Number nên fmt.Sprint là cách đọc chung cho mọi kiểu số.
+func firstScalar(raw map[string]any, keys ...string) (string, bool) {
+	for _, key := range keys {
+		v, ok := raw[key]
+		if !ok || v == nil {
+			continue
+		}
+		switch t := v.(type) {
+		case map[string]any, []any:
+			continue
+		case float64:
+			return strconv.FormatFloat(t, 'f', -1, 64), true
+		case string:
+			if strings.TrimSpace(t) == "" {
+				continue
+			}
+			return strings.TrimSpace(t), true
+		default:
+			s := strings.TrimSpace(fmt.Sprint(t))
+			if s == "" || s == "<nil>" {
+				continue
+			}
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// firstFlag đọc cờ 0/1/true/false; không có trường thì nil (Zalo không nói).
+func firstFlag(raw map[string]any, keys ...string) *bool {
+	value, ok := firstScalar(raw, keys...)
+	if !ok {
+		return nil
+	}
+	var flag bool
+	switch strings.ToLower(value) {
+	case "1", "true":
+		flag = true
+	case "0", "false":
+		flag = false
+	default:
+		return nil
+	}
+	return &flag
+}
+
+// scalarFields chép các trường vô hướng của node hồ sơ (bỏ map/mảng lồng: đó là
+// dữ liệu khác, và có thể rất to).
+func scalarFields(raw map[string]any) map[string]any {
+	out := make(map[string]any, len(raw))
+	for key, v := range raw {
+		switch t := v.(type) {
+		case nil, map[string]any, []any:
+			continue
+		case string, bool, float64:
+			out[key] = t
+		default:
+			out[key] = fmt.Sprint(t)
+		}
+	}
+	return out
 }
 
 // normalizeGender đổi mã giới tính của Zalo về "male"/"female".
 //
-// Zalo trả SỐ và không thống nhất: chỗ 0/1, chỗ 1/2, chỗ lại là chữ. Nhận
-// không ra thì trả RỖNG chứ đừng đoán — đoán sai còn tệ hơn không biết, vì
-// bên gọi sẽ tin tưởng gọi khách sai giới.
+// Hồ sơ Zalo (getprofiles): 0 = Nam, 1 = Nữ. Không có giá trị nào nghĩa là
+// "chưa rõ" — nên khi trường VẮNG thì bên gọi nhận rỗng, còn "0" là nam thật.
+// Nhận không ra thì trả RỖNG chứ đừng đoán: đoán sai còn tệ hơn không biết.
 func normalizeGender(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "male", "m", "nam", "0":
 		return "male"
 	case "female", "f", "nu", "nữ", "1":
 		return "female"
+	}
+	return ""
+}
+
+// normalizeMonthDay đọc ngày sinh KHÔNG có năm ("20/05", "20-05") thành "05-20".
+func normalizeMonthDay(raw string) string {
+	raw = strings.TrimSpace(raw)
+	for _, layout := range []string{"02/01", "02-01", "2/1", "2-1"} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed.Format("01-02")
+		}
 	}
 	return ""
 }
