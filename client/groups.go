@@ -18,8 +18,15 @@ import (
 // làm được gì với nhóm.
 
 // Group là nhóm Zalo ở dạng ổn định của ta.
+//
+// GroupID là mã nhóm theo góc nhìn của CHÍNH tài khoản đang đọc — giống uid
+// người dùng, nick khác có thể thấy mã khác. GlobalID là mã nhóm như nhau với
+// mọi nick (Zalo trả "globalId" trong thông tin nhóm); rỗng khi Zalo không trả.
+// Lưu / gộp nhóm dùng chung nhiều nick thì khoá theo GlobalID, còn gọi Zalo
+// (quét thành viên, gửi tin) vẫn dùng GroupID của đúng nick đó.
 type Group struct {
 	GroupID     string
+	GlobalID    string
 	Name        string
 	Avatar      string
 	OwnerID     string
@@ -545,6 +552,7 @@ func groupFromMap(raw map[string]any) (Group, bool) {
 	}
 	return Group{
 		GroupID:     id,
+		GlobalID:    firstString(raw, "globalId", "global_id", "groupGlobalId"),
 		Name:        name,
 		Avatar:      firstString(raw, "avt", "avatar", "fullAvt", "avatarUrl"),
 		OwnerID:     firstID(raw, "creatorId", "ownerId", "creator_id"),

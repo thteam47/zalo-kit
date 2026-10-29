@@ -244,3 +244,15 @@ func TestMaNhomTuVerMap(t *testing.T) {
 		t.Fatalf("không có gridVerMap thì rỗng, nhận %#v", got)
 	}
 }
+
+// groupFromMap đọc globalId của nhóm (như nhau với mọi nick) khi Zalo có trả.
+func TestGroupFromMapReadsGlobalID(t *testing.T) {
+	g, ok := groupFromMap(map[string]any{"groupId": "g1", "name": "Nhóm A", "globalId": "GG1"})
+	if !ok || g.GroupID != "g1" || g.GlobalID != "GG1" {
+		t.Fatalf("muốn GroupID g1 + GlobalID GG1, có %+v (ok=%v)", g, ok)
+	}
+	g, ok = groupFromMap(map[string]any{"groupId": "g2", "name": "Nhóm B"})
+	if !ok || g.GlobalID != "" {
+		t.Fatalf("Zalo không trả globalId thì để rỗng, có %+v", g)
+	}
+}
