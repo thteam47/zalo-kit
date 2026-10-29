@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,9 +26,88 @@ type Group struct {
 	MemberCount int
 }
 
+// groupInfoBatch: số nhóm mỗi lượt FetchGroupInfo (Zalo Web cũng hỏi theo lô 50).
+const groupInfoBatch = 50
+
 // ListGroups đọc mọi nhóm nick này đang ở trong.
+//
+// ⚠️ Zalo tách làm HAI bước: FetchAllGroups (getlg/v4) chỉ trả
+// {gridVerMap: {groupId: version}} — CHỈ CÓ MÃ, không tên / ảnh / số thành viên,
+// nên groupFromMap không nhận ra nút nào và danh sách ra RỖNG dù nick có nhóm.
+// Phải đọc mã từ gridVerMap rồi hỏi FetchGroupInfo theo lô để lấy thông tin.
 func (c *Client) ListGroups() ([]Group, error) {
-	return c.nhomTheoCay(func() (any, error) { return c.api.FetchAllGroups() }, "đọc danh sách nhóm")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, err := c.guard(); err != nil {
+		return nil, err
+	}
+	raw, err := c.api.FetchAllGroups()
+	if err != nil {
+		return nil, fmt.Errorf("zalo-kit: đọc danh sách nhóm: %w", err)
+	}
+	found := map[string]Group{}
+	// Phòng khi một phiên bản Zalo trả sẵn thông tin nhóm (gridInfoMap) ngay bước đầu.
+	collectGroups(raw, found, 0)
+	ids := maNhomTuVerMap(raw, 0)
+	pending := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := found[id]; !ok {
+			pending = append(pending, id)
+		}
+	}
+	for start := 0; start < len(pending); start += groupInfoBatch {
+		end := start + groupInfoBatch
+		if end > len(pending) {
+			end = len(pending)
+		}
+		info, infoErr := c.api.FetchGroupInfo(pending[start:end]...)
+		if infoErr != nil {
+			// Đã có một phần thì trả phần đó — hơn là trắng danh sách.
+			if len(found) > 0 {
+				break
+			}
+			return nil, fmt.Errorf("zalo-kit: đọc thông tin nhóm: %w", infoErr)
+		}
+		collectGroups(info, found, 0)
+	}
+	out := make([]Group, 0, len(found))
+	for _, group := range found {
+		out = append(out, group)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].GroupID < out[j].GroupID })
+	return out, nil
+}
+
+// maNhomTuVerMap nhặt mã nhóm từ khoá của gridVerMap ({groupId: version}), ở bất kỳ
+// độ sâu nào của cây trả về. Thứ tự sắp xếp để ổn định giữa các lần gọi.
+func maNhomTuVerMap(value any, depth int) []string {
+	if depth > 6 || value == nil {
+		return nil
+	}
+	var out []string
+	switch current := value.(type) {
+	case map[string]any:
+		if verMap, ok := current["gridVerMap"].(map[string]any); ok {
+			for id := range verMap {
+				if id = strings.TrimSpace(id); id != "" {
+					out = append(out, id)
+				}
+			}
+			sort.Strings(out)
+			return out
+		}
+		for _, nested := range current {
+			out = append(out, maNhomTuVerMap(nested, depth+1)...)
+		}
+	case []any:
+		for _, nested := range current {
+			out = append(out, maNhomTuVerMap(nested, depth+1)...)
+		}
+	case interface{ ToMap() map[string]any }:
+		return maNhomTuVerMap(current.ToMap(), depth+1)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // GroupInfo đọc thông tin chi tiết của một hoặc nhiều nhóm.

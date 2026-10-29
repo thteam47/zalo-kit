@@ -222,3 +222,25 @@ func TestGoiThoaiChanDauVaoRong(t *testing.T) {
 		}
 	}
 }
+
+// getlg/v4 chỉ trả mã nhóm trong gridVerMap — phải nhặt được mã để hỏi tiếp thông tin.
+func TestMaNhomTuVerMap(t *testing.T) {
+	ids := maNhomTuVerMap(map[string]any{
+		"data": map[string]any{
+			"version":    "123",
+			"gridVerMap": map[string]any{"g2": "5", "g1": "7", " ": "1"},
+		},
+	}, 0)
+	if len(ids) != 2 || ids[0] != "g1" || ids[1] != "g2" {
+		t.Fatalf("nhận %#v", ids)
+	}
+	// Chỉ có mã thì groupFromMap không nhận ra nhóm nào (lý do phải hỏi FetchGroupInfo).
+	out := map[string]Group{}
+	collectGroups(map[string]any{"gridVerMap": map[string]any{"g1": "7"}}, out, 0)
+	if len(out) != 0 {
+		t.Fatalf("không được bịa nhóm từ mã trần: %#v", out)
+	}
+	if got := maNhomTuVerMap(map[string]any{"x": 1}, 0); len(got) != 0 {
+		t.Fatalf("không có gridVerMap thì rỗng, nhận %#v", got)
+	}
+}
