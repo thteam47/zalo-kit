@@ -136,7 +136,17 @@ func (c *Client) GroupMembers(groupID string) ([]Profile, error) {
 	if groupID == "" {
 		return nil, errors.New("zalo-kit: thiếu mã nhóm")
 	}
-	return c.danhSach(func() (any, error) { return c.api.GetGroupMember(groupID) }, "đọc thành viên nhóm")
+	// Lấy FULL thành viên: GetGroupMember (getmg-v2) đi theo delta nên nhóm lớn chỉ
+	// trả vài hồ sơ. Dùng getmg-v1 phân trang (GetGroupMembersPaged) gom HẾT uid, rồi
+	// GetGroupMemberProfiles ép lấy hồ sơ đầy đủ. Nhóm nhỏ / paged lỗi / rỗng → lùi về
+	// API cũ để không mất khả năng đọc nhóm nhỏ.
+	return c.danhSach(func() (any, error) {
+		ids, _, err := c.api.GetGroupMembersPaged(groupID, 50, 200)
+		if err != nil || len(ids) == 0 {
+			return c.api.GetGroupMember(groupID)
+		}
+		return c.api.GetGroupMemberProfiles(ids)
+	}, "đọc thành viên nhóm")
 }
 
 // CreateGroup lập nhóm mới và trả về nhóm vừa lập.
