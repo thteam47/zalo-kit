@@ -140,13 +140,96 @@ func (c *Client) GroupMembers(groupID string) ([]Profile, error) {
 	// trả vài hồ sơ. Dùng getmg-v1 phân trang (GetGroupMembersPaged) gom HẾT uid, rồi
 	// GetGroupMemberProfiles ép lấy hồ sơ đầy đủ. Nhóm nhỏ / paged lỗi / rỗng → lùi về
 	// API cũ để không mất khả năng đọc nhóm nhỏ.
-	return c.danhSach(func() (any, error) {
-		ids, _, err := c.api.GetGroupMembersPaged(groupID, 50, 200)
+	//
+	// Vai trong nhóm (trưởng/phó) KHÔNG nằm trong hồ sơ thành viên — nó ở MỤC NHÓM
+	// (creatorId = chủ/trưởng, adminIds = phó). getmg-v1 trả kèm mục nhóm của trang
+	// đầu; đọc owner/admin ở đó rồi đóng dấu GroupRole cho từng hồ sơ. Nhóm nhỏ (lùi
+	// getmg-v2) raw cũng kèm mục nhóm nên vẫn đọc được vai.
+	owner := ""
+	admins := map[string]bool{}
+	profiles, err := c.danhSach(func() (any, error) {
+		ids, info, err := c.api.GetGroupMembersPaged(groupID, 50, 200)
 		if err != nil || len(ids) == 0 {
-			return c.api.GetGroupMember(groupID)
+			raw, ferr := c.api.GetGroupMember(groupID)
+			if ferr == nil {
+				owner, admins = groupRolesFromAny(raw)
+			}
+			return raw, ferr
 		}
+		owner, admins = groupRolesFromAny(info)
 		return c.api.GetGroupMemberProfiles(ids)
 	}, "đọc thành viên nhóm")
+	if err != nil {
+		return nil, err
+	}
+	// Đóng dấu vai: chỉ khi đọc được mục nhóm (có owner / admin). Không đọc được →
+	// để GroupRole rỗng (không đoán "member" cho tất cả, tránh báo sai).
+	if owner != "" || len(admins) > 0 {
+		for i := range profiles {
+			uid := normalizeMemberID(profiles[i].UserID)
+			switch {
+			case uid != "" && uid == owner:
+				profiles[i].GroupRole = "owner"
+			case uid != "" && admins[uid]:
+				profiles[i].GroupRole = "admin"
+			default:
+				profiles[i].GroupRole = "member"
+			}
+		}
+	}
+	return profiles, nil
+}
+
+// groupRolesFromAny tìm vai trong cây trả về của Zalo: creatorId (chủ/trưởng nhóm)
+// và adminIds (phó nhóm). Duyệt cả cây vì tuỳ phiên bản endpoint mục nhóm nằm ở
+// các độ sâu khác nhau (getmg-v1 trả thẳng mục nhóm; getmg-v2 bọc theo groupId).
+// Trả uid chủ nhóm (đã bỏ hậu tố "_N") + tập uid phó nhóm.
+func groupRolesFromAny(value any) (owner string, admins map[string]bool) {
+	admins = map[string]bool{}
+	var walk func(v any, depth int)
+	walk = func(v any, depth int) {
+		if depth > 6 || v == nil {
+			return
+		}
+		switch cur := v.(type) {
+		case map[string]any:
+			if owner == "" {
+				if o := normalizeMemberID(firstString(cur, "creatorId", "creator_id", "ownerId", "owner_id")); o != "" {
+					owner = o
+				}
+			}
+			for _, key := range []string{"adminIds", "admin_ids", "adminId"} {
+				if list, ok := cur[key].([]any); ok {
+					for _, item := range list {
+						if id := normalizeMemberID(fmt.Sprint(item)); id != "" {
+							admins[id] = true
+						}
+					}
+				}
+			}
+			for _, nested := range cur {
+				walk(nested, depth+1)
+			}
+		case []any:
+			for _, nested := range cur {
+				walk(nested, depth+1)
+			}
+		case interface{ ToMap() map[string]any }:
+			walk(cur.ToMap(), depth+1)
+		}
+	}
+	walk(value, 0)
+	return owner, admins
+}
+
+// normalizeMemberID cắt hậu tố "_N" Zalo hay gắn kèm id thành viên ("123_0") để
+// so khớp với uid sạch của hồ sơ.
+func normalizeMemberID(raw string) string {
+	id := strings.TrimSpace(raw)
+	if i := strings.IndexByte(id, '_'); i > 0 {
+		id = id[:i]
+	}
+	return id
 }
 
 // CreateGroup lập nhóm mới và trả về nhóm vừa lập.

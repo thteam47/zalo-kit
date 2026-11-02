@@ -34,6 +34,12 @@ type Profile struct {
 	// phổ biến) vẫn chúc sinh nhật được.
 	BirthdayMonthDay string
 	GlobalID         string
+	// GroupRole là vai trong nhóm KHI hồ sơ đến từ GroupMembers: "owner" (chủ/
+	// trưởng nhóm), "admin" (phó nhóm), "member" (thành viên thường). Rỗng khi
+	// không rõ (nhóm nhỏ không kèm vai, hoặc hồ sơ không đến từ quét nhóm). Vai
+	// KHÔNG phải thuộc tính người dùng mà là của tư cách thành viên nhóm, nên chỉ
+	// GroupMembers điền trường này — FetchProfiles/FindByPhone để rỗng.
+	GroupRole string
 	// Con trỏ: nil = Zalo không nói, khác với false.
 	IsFriend  *bool
 	IsBlocked *bool
