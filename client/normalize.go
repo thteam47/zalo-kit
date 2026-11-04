@@ -50,6 +50,10 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 		msg.Type, msg.Reaction, msg.Text, msg.MediaURL = inbound.MessageReaction, reaction, "", ""
 	} else if call := callOf(raw); call != nil {
 		msg.Type, msg.Call, msg.Text, msg.MediaURL = inbound.MessageCall, call, CallSummary(*call), ""
+	} else if deletion := deletionOf(raw); deletion != nil {
+		// Thu hồi / xoá cũng không phải lời ai nói: trước đây "chat.delete" rơi
+		// vào tin chữ với Text là khối "[map[actionType:0 clientDelMsgId:…]]".
+		msg.Type, msg.Deletion, msg.Text, msg.MediaURL = inbound.MessageDeletion, deletion, "", ""
 	}
 	return msg
 }
@@ -111,7 +115,9 @@ func contentMedia(raw map[string]any) string {
 // looksLikeDump nhận ra chuỗi do fmt.Sprint in ra từ map — thà để trống còn hơn
 // lưu một khối rác vào lịch sử hội thoại.
 func looksLikeDump(text string) bool {
-	return strings.HasPrefix(strings.TrimSpace(text), "map[")
+	trimmed := strings.TrimSpace(text)
+	// "[map[…]]" là mảng chứa map (content của chat.delete) in bằng fmt.Sprint.
+	return strings.HasPrefix(trimmed, "map[") || strings.HasPrefix(trimmed, "[map[")
 }
 
 func asText(value any) string {

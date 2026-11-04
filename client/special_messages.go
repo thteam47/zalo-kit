@@ -117,6 +117,43 @@ func startsWithCall(text string) bool {
 }
 
 // contentMap đọc một trường có thể là object hoặc chuỗi JSON của object.
+// deletionTypes: msgType Zalo dùng cho việc rút lại / xoá tin. Đối chiếu bằng
+// msgType NGUYÊN VĂN vì classifyMessage gộp mọi loại chứa chữ "chat" thành chữ.
+var deletionTypes = map[string]string{
+	"chat.undo":    inbound.DeletionUndo,
+	"group.undo":   inbound.DeletionUndo,
+	"chat.delete":  inbound.DeletionDelete,
+	"group.delete": inbound.DeletionDelete,
+}
+
+// deletionOf nhận ra sự kiện thu hồi / xoá tin.
+//
+// Soi trên phiên sống 11/2026: chủ nick xoá một tin trên điện thoại → socket
+// dội về msgType "chat.delete", content là MẢNG một phần tử
+// {actionType:0, clientDelMsgId:<cliMsgId tin gốc>, globalDelMsgId:0,
+// destId, type:2, uidFrom, uidTo}. za-go in mảng đó bằng fmt.Sprint nên Text
+// thành "[map[actionType:0 clientDelMsgId:…]]" — trước đây lọt vào hội thoại
+// như một tin chữ. Thu hồi (chat.undo) để msgId / cliMsgId tin gốc ngay trong
+// content (object).
+func deletionOf(raw map[string]any) *inbound.Deletion {
+	kind, ok := deletionTypes[strings.ToLower(strings.TrimSpace(firstString(raw, "msgType", "type", "contentType")))]
+	if !ok {
+		return nil
+	}
+	deletion := &inbound.Deletion{Kind: kind}
+	content := contentMap(raw["content"])
+	if content == nil {
+		if list, isList := raw["content"].([]any); isList && len(list) > 0 {
+			content = contentMap(list[0])
+		}
+	}
+	if content != nil {
+		deletion.TargetMessageID = firstID(content, "globalDelMsgId", "globalMsgId", "msgId", "gMsgID")
+		deletion.TargetClientMessageID = firstID(content, "clientDelMsgId", "cliMsgId", "cMsgID", "clientMsgId")
+	}
+	return deletion
+}
+
 func contentMap(value any) map[string]any {
 	switch v := value.(type) {
 	case map[string]any:

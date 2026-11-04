@@ -44,7 +44,31 @@ type Message struct {
 	Reaction *Reaction
 	// Call có mặt khi đây là bản ghi một cuộc gọi Zalo (Type = MessageCall).
 	Call *Call
+	// Deletion có mặt khi đây là SỰ KIỆN rút lại / xoá một tin đã gửi (Type =
+	// MessageDeletion) — KHÔNG phải một tin mới. Bên nhận phải đánh dấu lên tin
+	// đích (giữ nguyên lịch sử), đừng ghi thành một dòng trong hội thoại.
+	Deletion *Deletion
 }
+
+// Deletion mô tả tin nào bị rút lại hoặc xoá.
+//
+// Hình dạng thật soi trên phiên sống (11/2026): msgType "chat.delete", content
+// là MỘT PHẦN TỬ trong mảng: {actionType:0, clientDelMsgId:<cliMsgId tin gốc>,
+// globalDelMsgId:0|<msgId>, destId, type, uidFrom, uidTo}. Thu hồi (chat.undo)
+// để msgId/cliMsgId của tin gốc trong content.
+type Deletion struct {
+	// Kind: "undo" = thu hồi (mất ở cả hai phía Zalo) | "delete" = xoá phía
+	// người bấm (phía kia vẫn thấy).
+	Kind string
+	// TargetMessageID / TargetClientMessageID: msgId / cliMsgId của tin bị xoá.
+	TargetMessageID       string
+	TargetClientMessageID string
+}
+
+const (
+	DeletionUndo   = "undo"
+	DeletionDelete = "delete"
+)
 
 // Reaction là một lượt thả (hoặc gỡ, khi Icon rỗng) cảm xúc lên một tin.
 type Reaction struct {
@@ -100,6 +124,8 @@ const (
 	MessageReaction MessageType = "reaction"
 	// MessageCall: bản ghi cuộc gọi, xem Message.Call.
 	MessageCall MessageType = "call"
+	// MessageDeletion: sự kiện thu hồi / xoá một tin đã gửi, xem Message.Deletion.
+	MessageDeletion MessageType = "deletion"
 )
 
 func (m Message) Valid() bool {
