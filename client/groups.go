@@ -524,6 +524,36 @@ func (c *Client) SendReaction(threadID string, threadType inbound.ThreadType,
 	return nil
 }
 
+// RemoveReaction removes this account's reaction, for both direct and group threads.
+// Zalo encodes removal as rIcon="", rType=-1 (not a normal empty reaction).
+func (c *Client) RemoveReaction(threadID string, threadType inbound.ThreadType, target MessageRef) error {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" || strings.TrimSpace(target.MsgID) == "" || strings.TrimSpace(target.CliMsgID) == "" {
+		return errors.New("zalo-kit: thiếu mã luồng, mã tin hoặc mã client của tin")
+	}
+	if threadType != inbound.ThreadDirect && threadType != inbound.ThreadGroup {
+		return errors.New("zalo-kit: loại luồng không hợp lệ")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	api, err := c.guard()
+	if err != nil {
+		return err
+	}
+	return removeReaction(api, threadID, threadType, target)
+}
+
+type reactionSender interface {
+	SendReaction(*zago.MessageObject, string, string, zago.ThreadType, int) (any, error)
+}
+
+func removeReaction(api reactionSender, threadID string, threadType inbound.ThreadType, target MessageRef) error {
+	if _, err := api.SendReaction(target.toMessageObject(), "", threadID, zaloThreadType(threadType), -1); err != nil {
+		return fmt.Errorf("zalo-kit: gỡ cảm xúc: %w", err)
+	}
+	return nil
+}
+
 // DeleteMessage xoá một tin khỏi hội thoại.
 //
 // ⚠️ onlyMe=true là xoá PHÍA MÌNH, người kia vẫn thấy. Đây KHÔNG phải thu hồi
