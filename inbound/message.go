@@ -38,6 +38,10 @@ type Message struct {
 	ClientMessageID string
 	// Quote có mặt khi tin này trả lời (trích dẫn) một tin khác.
 	Quote *Quote
+	// Card giữ NGUYÊN khối nội dung khi content của Zalo là object (thẻ link, danh thiếp, video, ghi âm,
+	// vị trí, gif, tệp…). Text / MediaURL chỉ còn "tiêu đề — mô tả" và một URL, không đủ để vẽ lại
+	// thẻ (ảnh xem trước, link, thời lượng, toạ độ). nil khi content là chuỗi.
+	Card *Card
 	// Reaction có mặt khi đây là SỰ KIỆN thả cảm xúc lên một tin (Type =
 	// MessageReaction) — KHÔNG phải một tin mới. Bên nhận phải gắn nó vào tin
 	// đích, đừng ghi thành một dòng trong hội thoại.
@@ -69,6 +73,18 @@ const (
 	DeletionUndo   = "undo"
 	DeletionDelete = "delete"
 )
+
+// Card là khối nội dung dạng object của một tin Zalo, giữ nguyên các trường thô.
+type Card struct {
+	// Action: "recommened.link" (thẻ link), "recommened.user" (danh thiếp)… — rỗng với video, ghi âm.
+	Action      string
+	Href        string
+	Title       string
+	Description string
+	Thumb       string
+	// Params: chuỗi JSON thô Zalo gửi kèm (thời lượng, toạ độ, mediaTitle, fileExt…).
+	Params string
+}
 
 // Reaction là một lượt thả (hoặc gỡ, khi Icon rỗng) cảm xúc lên một tin.
 type Reaction struct {

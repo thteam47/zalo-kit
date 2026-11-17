@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 	msg.IsSelf = msg.SenderID != "" && cleanID(selfID) == msg.SenderID
 	msg.ClientMessageID = firstID(raw, "cliMsgId")
 	msg.Quote = quoteOf(raw)
+	msg.Card = cardOf(raw)
 	// Hai loại "tin" không phải lời ai nói, phải tách ra TRƯỚC khi tới bên
 	// nhận: trước đây cả hai rơi vào nhánh tin chữ — thả tim trên điện thoại
 	// thành một bong bóng "[Tin nhắn]" trống, cuộc gọi thành chữ
@@ -80,6 +82,34 @@ func quoteOf(raw map[string]any) *inbound.Quote {
 		return nil
 	}
 	return quote
+}
+
+// cardOf giữ khối content dạng object (thẻ link, danh thiếp, video, ghi âm, vị trí…). params có khi là
+// chuỗi JSON, có khi là object — đưa về chuỗi JSON để bên nhận tự đọc.
+func cardOf(raw map[string]any) *inbound.Card {
+	content, ok := raw["content"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	card := &inbound.Card{
+		Action:      asText(content["action"]),
+		Href:        firstString(content, "href", "url"),
+		Title:       asText(content["title"]),
+		Description: asText(content["description"]),
+		Thumb:       firstString(content, "thumb", "thumbnail"),
+	}
+	switch params := content["params"].(type) {
+	case string:
+		card.Params = strings.TrimSpace(params)
+	case map[string]any:
+		if encoded, err := json.Marshal(params); err == nil {
+			card.Params = string(encoded)
+		}
+	}
+	if *card == (inbound.Card{}) {
+		return nil
+	}
+	return card
 }
 
 // contentText đọc phần chữ của tin.
