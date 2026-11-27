@@ -41,6 +41,9 @@ func normalizeMessage(accountID, selfID, mid, userID, text string, data *zago.Me
 		msg.ThreadType = inbound.ThreadGroup
 	}
 	msg.IsSelf = msg.SenderID != "" && cleanID(selfID) == msg.SenderID
+	if msg.ThreadType == inbound.ThreadGroup && !msg.IsSelf {
+		msg.MentionsBot = mentionsUser(raw, selfID)
+	}
 	msg.ClientMessageID = firstID(raw, "cliMsgId")
 	msg.Quote = quoteOf(raw)
 	msg.Card = cardOf(raw)
@@ -269,4 +272,31 @@ func cleanID(v any) string {
 		return ""
 	}
 	return strings.TrimSuffix(s, ".0")
+}
+
+// mentionsUser: tin nhóm có TAG đích danh uid này không. Zalo để danh sách thẻ ở raw["mentions"]
+// ([{uid, pos, len, type}]); "@Tất cả" (type 1, uid -1) KHÔNG tính là tag riêng — không để bot trả lời
+// mọi thông báo chung của nhóm.
+func mentionsUser(raw map[string]any, uid string) bool {
+	uid = cleanID(uid)
+	if uid == "" {
+		return false
+	}
+	list, ok := raw["mentions"].([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t := cleanID(m["type"]); t == "1" {
+			continue
+		}
+		if cleanID(m["uid"]) == uid {
+			return true
+		}
+	}
+	return false
 }

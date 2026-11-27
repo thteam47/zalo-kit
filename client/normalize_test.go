@@ -103,3 +103,20 @@ func TestGiuNguyenLoaiThoCuaZalo(t *testing.T) {
 		}
 	}
 }
+
+// Tag đích danh nick trong nhóm → MentionsBot; "@Tất cả" và tag người khác thì không.
+func TestGroupMentionsSelf(t *testing.T) {
+	mk := func(mentions []any) inbound.Message {
+		data := zago.NewMessageObject(map[string]any{"msgId": "m-2", "uidFrom": "u-9", "content": "@Shop ơi", "msgType": "webchat", "mentions": mentions})
+		return normalizeMessage("acc", "self-uid", "", "u-9", "", data, "g-1", zago.ThreadTypeGROUP, time.Time{})
+	}
+	if !mk([]any{map[string]any{"uid": "self-uid", "pos": float64(0), "len": float64(5), "type": float64(0)}}).MentionsBot {
+		t.Fatal("tag nick phải bật MentionsBot")
+	}
+	if mk([]any{map[string]any{"uid": "-1", "pos": float64(0), "len": float64(4), "type": float64(1)}}).MentionsBot {
+		t.Fatal("@Tất cả không tính là tag riêng")
+	}
+	if mk([]any{map[string]any{"uid": "other", "type": float64(0)}}).MentionsBot || mk(nil).MentionsBot {
+		t.Fatal("tag người khác / không tag thì không bật")
+	}
+}
